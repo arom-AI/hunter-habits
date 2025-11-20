@@ -243,11 +243,15 @@ SHEET_ID = st.secrets["google_sheets"]["sheet_id"]
 if "gcp_service_account" in st.secrets:
     gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
 else:
-    # mode local éventuel
     SERVICE_ACCOUNT_FILE = BASE_DIR / "habit-builder-streamlit-838d1b385e36.json"
     gc = gspread.service_account(filename=str(SERVICE_ACCOUNT_FILE))
 
 sh = gc.open_by_key(SHEET_ID)
+
+ws_habits = sh.worksheet("habits")
+ws_checkins = sh.worksheet("checkins")
+ws_meta = sh.worksheet("meta")
+
 
 
 # ---------------------------------------------------------------------
