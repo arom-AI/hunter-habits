@@ -5,6 +5,7 @@ from datetime import date, timedelta
 from pathlib import Path
 import base64
 import json
+import re
 import gspread
 from gspread_dataframe import get_as_dataframe, set_with_dataframe
 from openai import OpenAI
@@ -268,6 +269,18 @@ habits_df = habits_df.dropna(subset=["name"])
 # On renomme 'name' en 'habit' pour le reste du code
 habits_df = habits_df.rename(columns={"name": "habit"})
 
+# Normalisation de la fréquence : daily / weekly (par défaut : daily)
+if "frequency" not in habits_df.columns:
+    habits_df["frequency"] = "daily"
+else:
+    habits_df["frequency"] = (
+        habits_df["frequency"]
+        .astype(str)
+        .str.strip()
+        .str.lower()
+        .replace({"quotidienne": "daily", "hebdo": "weekly", "hebdomadaire": "weekly"})
+    )
+
 # Si la colonne xp_value n'existe pas, on la dérive de is_core :
 #  - 20 XP si is_core == 1
 #  - 10 XP sinon
@@ -281,6 +294,7 @@ if "xp_value" not in habits_df.columns:
         habits_df["xp_value"] = habits_df.apply(compute_xp, axis=1)
     else:
         habits_df["xp_value"] = 10
+
 
 
 checkins_df = get_as_dataframe(ws_checkins, evaluate_formulas=True, header=0)
@@ -338,10 +352,23 @@ def compute_discipline_score(df):
     return int((achieved / total_weight) * 100)
 
 def get_today_discipline(checkins_day):
+    """
+    Calcule le score de discipline du jour
+    uniquement sur les habitudes DAILY.
+    Les weekly ne pénalisent pas le score.
+    """
     if checkins_day.empty:
         return 0
-    merged = checkins_day.merge(habits_df, left_on="habit_id", right_on="id")
-    return compute_discipline_score(merged.rename(columns={"xp_value": "xp"}))
+
+    merged = checkins_day.merge(habits_df, left_on="habit_id", right_on="id", how="left")
+    merged = merged[merged["frequency"] == "daily"]
+
+    if merged.empty:
+        return 0
+
+    merged = merged.rename(columns={"xp_value": "xp"})
+    return compute_discipline_score(merged)
+
 
 today_score = get_today_discipline(today_checkins)
 
@@ -354,7 +381,11 @@ def build_daily_score_history():
         return pd.DataFrame(columns=["date", "discipline_score"])
 
     merged = checkins_df.merge(habits_df, left_on="habit_id", right_on="id", how="left")
+    merged = merged[merged["frequency"] == "daily"]  # on ne garde que les daily
     merged = merged.rename(columns={"xp_value": "xp"})
+
+    if merged.empty:
+        return pd.DataFrame(columns=["date", "discipline_score"])
 
     history = (
         merged.groupby("date")
@@ -363,7 +394,56 @@ def build_daily_score_history():
     )
     return history
 
+
 daily_scores_df = build_daily_score_history()
+
+def get_week_bounds(d: date):
+    """
+    Retourne le lundi et le dimanche de la semaine de la date d.
+    """
+    start = d - timedelta(days=d.weekday())  # lundi
+    end = start + timedelta(days=6)          # dimanche
+    return start, end
+
+
+def system_assign_weekly_xp(habit_row, completions_count_last_4_weeks: int) -> int:
+    """
+    Demande au SYSTEM combien d'XP donner pour une weekly,
+    en fonction de l'habitude et de ton historique.
+    Si ça foire, fallback sur une valeur raisonnable.
+    """
+    base_xp = int(habit_row.get("xp_value", 20))
+    habit_name = str(habit_row.get("habit", "Habitude"))
+
+    prompt = f"""
+    Tu es le SYSTEM d'un jeu de discipline Solo Leveling.
+
+    On vient de valider une HABITUDE HEBDOMADAIRE.
+
+    - Nom de l'habitude : {habit_name}
+    - XP de base prévue : {base_xp}
+    - Nombre de fois complétée sur les 4 dernières semaines : {completions_count_last_4_weeks}
+
+    Donne UNIQUEMENT un nombre entier d'XP à accorder pour cette complétion.
+    Plus c'est rare / difficile pour l'utilisateur, plus l'XP peut être élevée.
+    Ne réponds que par le nombre, sans texte autour.
+    """
+
+    try:
+        raw = ask_system(prompt)
+        m = re.search(r"\d+", raw)
+        if m:
+            xp = int(m.group(0))
+            # sécurité : bornes min / max
+            return max(10, min(xp, 200))
+    except Exception:
+        pass
+
+    # fallback
+    if completions_count_last_4_weeks == 0:
+        return base_xp * 2
+    return base_xp
+
 
 # ---------------------------------------------------------------------
 # SAVE CHECKINS / XP / META
@@ -620,60 +700,121 @@ st.markdown("## 📆 Daily Check-In")
 if habits_df.empty:
     st.warning("⚠️ Aucune habitude définie dans Google Sheets (onglet 'habits').")
 else:
-    st.markdown(
-        "Complète tes habitudes ci-dessous pour gagner du XP et renforcer ton aura."
-    )
+    # Séparation des daily / weekly
+    daily_habits = habits_df[habits_df["frequency"] == "daily"]
+    weekly_habits = habits_df[habits_df["frequency"] == "weekly"]
 
-    updated_today = False
-    new_xp_gain = 0
+    # ---------- DAILY ----------
+    st.markdown("### 🔁 Habitudes quotidiennes")
 
-    for idx, row in habits_df.iterrows():
-        habit_id = int(row["id"])
-        habit_name = row["habit"]
-        xp_value = int(row["xp_value"])
+    if daily_habits.empty:
+        st.info("Aucune habitude quotidienne définie.")
+    else:
+        st.markdown(
+            "Complète tes habitudes ci-dessous pour gagner du XP et renforcer ton aura."
+        )
 
-        # Vérifie si déjà rempli aujourd’hui
-        exists = today_checkins[
-            (today_checkins["habit_id"] == habit_id)
-        ]
+        updated_today = False
+        new_xp_gain = 0
 
-        col1, col2 = st.columns([2, 1])
+        for idx, row in daily_habits.iterrows():
+            habit_id = int(row["id"])
+            habit_name = row["habit"]
+            xp_value = int(row["xp_value"])
 
-        with col1:
-            st.write(f"**{habit_name}**  (+{xp_value} XP)")
+            # Vérifie si déjà rempli aujourd’hui (tous types confondus)
+            exists = today_checkins[
+                (today_checkins["habit_id"] == habit_id)
+            ]
 
-        with col2:
-            if exists.empty:
-                if st.button(f"Valider {habit_name}", key=f"habit_{habit_id}"):
-                    save_checkin(habit_id, 1)
-                    new_xp_gain += xp_value
-                    updated_today = True
-            else:
-                st.success("✔ OK")
+            col1, col2 = st.columns([2, 1])
 
-    # Si le joueur a validé des habitudes aujourd'hui
-    if updated_today:
-        xp_total += new_xp_gain
-        save_meta()
+            with col1:
+                st.write(f"**{habit_name}**  (+{xp_value} XP)")
 
-        # Message XP gagné
-        st.success(f"🔥 {new_xp_gain} XP gagné aujourd'hui !")
+            with col2:
+                if exists.empty:
+                    if st.button(f"Valider {habit_name}", key=f"habit_daily_{habit_id}"):
+                        save_checkin(habit_id, 1)
+                        new_xp_gain += xp_value
+                        updated_today = True
+                else:
+                    st.success("✔ OK")
 
-        # LEVEL UP ?
-        new_level = get_level(xp_total)
-        if new_level > level:
-            level_up_msg = system_generate_level_up_message(new_level)
-            st.markdown(
-                f"""
-                <div class="system-message">
-                    <b>[LEVEL UP]</b><br><br>
-                    {level_up_msg}
-                </div>
-                """,
-                unsafe_allow_html=True
+        # Si le joueur a validé des habitudes DAILY aujourd'hui
+        if updated_today:
+            xp_total += new_xp_gain
+            save_meta()
+
+            st.success(f"🔥 {new_xp_gain} XP gagné aujourd'hui !")
+
+            # LEVEL UP ?
+            new_level = get_level(xp_total)
+            if new_level > level:
+                level_up_msg = system_generate_level_up_message(new_level)
+                st.markdown(
+                    f"""
+                    <div class="system-message">
+                        <b>[LEVEL UP]</b><br><br>
+                        {level_up_msg}
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+
+            st.experimental_rerun()
+
+    # ---------- WEEKLY ----------
+    st.markdown("---")
+    st.markdown("### 📅 Habitudes hebdomadaires (1x par semaine)")
+
+    if weekly_habits.empty:
+        st.info("Aucune habitude hebdomadaire définie.")
+    else:
+        week_start, week_end = get_week_bounds(today)
+        week_start_str = week_start.strftime("%Y-%m-%d")
+        week_end_str = week_end.strftime("%Y-%m-%d")
+
+        for idx, row in weekly_habits.iterrows():
+            habit_id = int(row["id"])
+            habit_name = row["habit"]
+
+            # Check : déjà validée cette semaine ?
+            mask = (
+                (checkins_df["habit_id"] == habit_id) &
+                (checkins_df["date"] >= week_start_str) &
+                (checkins_df["date"] <= week_end_str)
             )
+            done_this_week = not checkins_df[mask].empty
 
-        st.experimental_rerun()
+            col1, col2 = st.columns([2, 1])
+
+            with col1:
+                st.write(f"**{habit_name}**  (weekly)")
+
+            with col2:
+                if done_this_week:
+                    st.success("✔ Validée cette semaine")
+                else:
+                    if st.button(f"Valider {habit_name}", key=f"habit_weekly_{habit_id}"):
+                        # Nombre de complétions sur 4 semaines
+                        four_weeks_ago = today - timedelta(weeks=4)
+                        four_weeks_ago_str = four_weeks_ago.strftime("%Y-%m-%d")
+                        mask_hist = (
+                            (checkins_df["habit_id"] == habit_id) &
+                            (checkins_df["date"] >= four_weeks_ago_str)
+                        )
+                        completions_last_4_weeks = checkins_df[mask_hist].shape[0]
+
+                        # XP dynamique via SYSTEM
+                        gained_xp = system_assign_weekly_xp(row, completions_last_4_weeks)
+                        xp_total += gained_xp
+
+                        save_checkin(habit_id, 1)
+                        save_meta()
+
+                        st.success(f"💠 Weekly complétée : +{gained_xp} XP")
+                        st.experimental_rerun()
 
 
 # ---------------------------------------------------------------------
