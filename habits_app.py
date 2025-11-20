@@ -827,15 +827,22 @@ st.markdown("### ⚙️ Gérer les habitudes")
 with st.expander("Ajouter une nouvelle habitude"):
     new_habit_name = st.text_input("Nom de l'habitude :")
     new_habit_xp = st.number_input("XP associée :", min_value=5, max_value=100, value=10, step=5)
+    new_habit_freq = st.selectbox("Fréquence", ["daily", "weekly"], index=0)
 
     if st.button("Ajouter l'habitude"):
         if new_habit_name.strip():
             new_id = habits_df["id"].max() + 1 if not habits_df.empty else 1
-            new_row = {"id": new_id, "habit": new_habit_name, "xp_value": new_habit_xp}
+            new_row = {
+                "id": new_id,
+                "habit": new_habit_name,
+                "xp_value": new_habit_xp,
+                "frequency": new_habit_freq,
+            }
             habits_df = pd.concat([habits_df, pd.DataFrame([new_row])], ignore_index=True)
             set_with_dataframe(ws_habits, habits_df)
             st.success("Habitude ajoutée.")
             st.experimental_rerun()
+
 
 
 with st.expander("Modifier / supprimer des habitudes"):
