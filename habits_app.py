@@ -270,8 +270,31 @@ habits_df = habits_df.dropna(subset=["name"])
 habits_df = habits_df.rename(columns={"name": "habit"})
 
 # Normalisation de la fréquence : daily / weekly (par défaut : daily)
-if "frequency" not in habits_df.columns:
+# Harmonisation du nom de colonne
+if "frequency" in habits_df.columns:
+    col = "frequency"
+elif "Frequency" in habits_df.columns:
+    col = "Frequency"
+else:
+    col = None
+
+if col:
+    habits_df["frequency"] = (
+        habits_df[col]
+        .astype(str)
+        .str.strip()
+        .str.lower()
+        .replace({
+            "daily": "daily",
+            "quotidienne": "daily",
+            "weekly": "weekly",
+            "hebdo": "weekly",
+            "hebdomadaire": "weekly",
+        })
+    )
+else:
     habits_df["frequency"] = "daily"
+
 else:
     habits_df["frequency"] = (
         habits_df["frequency"]
