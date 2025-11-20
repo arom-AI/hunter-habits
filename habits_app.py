@@ -11,15 +11,6 @@ from gspread_dataframe import get_as_dataframe, set_with_dataframe
 from openai import OpenAI
 
 # ---------------------------------------------------------------------
-# PAGE CONFIG — LAYOUT PRO
-# ---------------------------------------------------------------------
-
-st.set_page_config(
-    page_title="Hunter Habits — Solo Leveling System",
-    layout="wide",
-)
-
-# ---------------------------------------------------------------------
 # PATHS & DIRECTORIES
 # ---------------------------------------------------------------------
 
@@ -100,30 +91,16 @@ def get_aura_class_for_score(score: int) -> str:
 st.markdown("""
 <style>
 
-/* LAYOUT GLOBAL : pleine largeur, alignée à gauche */
-.main .block-container {
-    max-width: 100% !important;
-    padding-left: 3rem !important;
-    padding-right: 3rem !important;
-}
-
-/* GLOBAL */
 body {
     background-color: #000000 !important;
     color: #e5e7eb !important;
     font-family: 'Inter', sans-serif;
 }
 
-/* TITRE PRINCIPAL */
-h1 {
-    text-align: left !important;
-    font-size: 2.4rem !important;
-    letter-spacing: 0.06em;
-}
-
-/* Sous-titres zones */
-h2, h3 {
-    text-align: left !important;
+/* GLOBAL TEXT */
+h1, h2, h3, h4, h5, h6 {
+    color: #f3f4f6 !important;
+    font-weight: 700;
 }
 
 /* SCROLLBAR */
@@ -276,12 +253,14 @@ ws_habits = sh.worksheet("habits")
 ws_checkins = sh.worksheet("checkins")
 ws_meta = sh.worksheet("meta")
 
+
+
 # ---------------------------------------------------------------------
 # LOAD DATA
 # ---------------------------------------------------------------------
 
 # On charge la feuille 'habits' avec tes colonnes actuelles :
-# id | name | category | unit | daily_target | start_date | is_core | frequency?
+# id | name | category | unit | daily_target | start_date | is_core
 habits_df = get_as_dataframe(ws_habits, evaluate_formulas=True, header=0)
 
 # On garde uniquement les lignes avec un nom d'habitude
@@ -316,12 +295,10 @@ if "xp_value" not in habits_df.columns:
     else:
         habits_df["xp_value"] = 10
 
+
+
 checkins_df = get_as_dataframe(ws_checkins, evaluate_formulas=True, header=0)
-checkins_df = (
-    checkins_df.dropna(subset=["date"])
-    if "date" in checkins_df.columns
-    else pd.DataFrame(columns=["date", "habit_id", "value"])
-)
+checkins_df = checkins_df.dropna(subset=["date"]) if "date" in checkins_df.columns else pd.DataFrame(columns=["date", "habit_id", "value"])
 
 meta_df = get_as_dataframe(ws_meta, evaluate_formulas=True, header=0)
 if "xp_total" in meta_df.columns and not meta_df.empty:
@@ -352,11 +329,7 @@ progress_level = xp_in_level / XP_PER_LEVEL
 today = date.today()
 today_str = today.strftime("%Y-%m-%d")
 
-today_checkins = (
-    checkins_df[checkins_df["date"] == today_str]
-    if "date" in checkins_df.columns
-    else pd.DataFrame()
-)
+today_checkins = checkins_df[checkins_df["date"] == today_str] if "date" in checkins_df.columns else pd.DataFrame()
 
 # ---------------------------------------------------------------------
 # DAILY DISCIPLINE SCORE
@@ -396,6 +369,7 @@ def get_today_discipline(checkins_day):
     merged = merged.rename(columns={"xp_value": "xp"})
     return compute_discipline_score(merged)
 
+
 today_score = get_today_discipline(today_checkins)
 
 # ---------------------------------------------------------------------
@@ -420,6 +394,7 @@ def build_daily_score_history():
     )
     return history
 
+
 daily_scores_df = build_daily_score_history()
 
 def get_week_bounds(d: date):
@@ -429,6 +404,7 @@ def get_week_bounds(d: date):
     start = d - timedelta(days=d.weekday())  # lundi
     end = start + timedelta(days=6)          # dimanche
     return start, end
+
 
 def system_assign_weekly_xp(habit_row, completions_count_last_4_weeks: int) -> int:
     """
@@ -455,7 +431,7 @@ def system_assign_weekly_xp(habit_row, completions_count_last_4_weeks: int) -> i
 
     try:
         raw = ask_system(prompt)
-        m = re.search(r"\\d+", raw)
+        m = re.search(r"\d+", raw)
         if m:
             xp = int(m.group(0))
             # sécurité : bornes min / max
@@ -467,6 +443,7 @@ def system_assign_weekly_xp(habit_row, completions_count_last_4_weeks: int) -> i
     if completions_count_last_4_weeks == 0:
         return base_xp * 2
     return base_xp
+
 
 # ---------------------------------------------------------------------
 # SAVE CHECKINS / XP / META
@@ -491,7 +468,7 @@ def save_meta():
     set_with_dataframe(ws_meta, meta_save)
 
 # ---------------------------------------------------------------------
-# SYSTEM GPT — INTELLIGENCE AUTONOME
+# SYSTEM GPT — INTELLIGENCE AUTONOME (Version C)
 # ---------------------------------------------------------------------
 
 def system_generate_feedback(daily_scores_df, habits_df, xp_total, level):
@@ -519,6 +496,7 @@ def system_generate_feedback(daily_scores_df, habits_df, xp_total, level):
 
     return ask_system(prompt)
 
+
 def system_generate_monthly_calibration(daily_scores_df, level, xp_total):
     """
     Calibration mensuelle : 
@@ -542,6 +520,7 @@ def system_generate_monthly_calibration(daily_scores_df, level, xp_total):
     """
 
     return ask_system(prompt)
+
 
 def system_generate_drop_alert(daily_scores_df):
     """
@@ -569,6 +548,7 @@ def system_generate_drop_alert(daily_scores_df):
 
     return None
 
+
 def system_generate_level_up_message(level):
     """
     Message SOLO LEVELING quand un niveau est atteint.
@@ -582,6 +562,7 @@ def system_generate_level_up_message(level):
     - style interface du SYSTEM
     """
     return ask_system(prompt)
+
 
 # ---------------------------------------------------------------------
 # TRIGGERS SYSTEM
@@ -605,116 +586,115 @@ if today_score > 0:
     system_messages.append(("FEEDBACK", daily_feedback))
 
 # ---------------------------------------------------------------------
-# UI: HUNTER CARD + SYSTEM + CALIBRATION (HEADER)
+# UI: HUNTER CARD + AVATAR + AURA + SYSTEM MESSAGES
 # ---------------------------------------------------------------------
 
 st.title("🔥 HUNTER DISCIPLINE SYSTEM — Solo Leveling Edition")
 
-header = st.container()
-with header:
-    col_left, col_mid, col_right = st.columns([1.4, 2.2, 1.1])
+col_left, col_mid, col_right = st.columns([1.3, 1.2, 1.0])
 
-    # ---------------------------------------------------------
-    # LEFT: HUNTER PROFILE
-    # ---------------------------------------------------------
-    with col_left:
-        st.markdown('<div class="hunter-card">', unsafe_allow_html=True)
-        st.markdown('<div class="hunter-title">HUNTER PROFILE</div>', unsafe_allow_html=True)
+# ---------------------------------------------------------
+# LEFT: HUNTER PROFILE
+# ---------------------------------------------------------
+with col_left:
+    st.markdown('<div class="hunter-card">', unsafe_allow_html=True)
+    st.markdown('<div class="hunter-title">HUNTER PROFILE</div>', unsafe_allow_html=True)
 
-        # Avatar + Aura
-        avatar_path = get_avatar_path_for_level(level)
-        avatar_b64 = image_to_base64(avatar_path)
-        aura_class = get_aura_class_for_score(today_score)
+    # Avatar + Aura
+    avatar_path = get_avatar_path_for_level(level)
+    avatar_b64 = image_to_base64(avatar_path)
+    aura_class = get_aura_class_for_score(today_score)
 
+    st.markdown(
+        f"""
+        <div class="avatar-wrapper {aura_class}">
+            <img class="avatar-img" src="data:image/png;base64,{avatar_b64}" />
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    # Level display
+    st.markdown(f'<div class="hunter-level">LVL {level}</div>', unsafe_allow_html=True)
+    st.progress(progress_level)
+
+    st.markdown(
+        f'<div class="hunter-sub">XP Total : {xp_total} · XP actuel : {xp_in_level}/{XP_PER_LEVEL}</div>',
+        unsafe_allow_html=True
+    )
+
+    if today_score > 0:
         st.markdown(
-            f"""
-            <div class="avatar-wrapper {aura_class}">
-                <img class="avatar-img" src="data:image/png;base64,{avatar_b64}" />
-            </div>
-            """,
+            f'<div class="hunter-sub" style="margin-top:10px;">Discipline Score (aujourd\'hui) : <b>{today_score}</b>/100</div>',
+            unsafe_allow_html=True
+        )
+    else:
+        st.markdown(
+            '<div class="hunter-sub" style="margin-top:10px;">Aucun check-in aujourd’hui.</div>',
             unsafe_allow_html=True
         )
 
-        # Level display
-        st.markdown(f'<div class="hunter-level">LVL {level}</div>', unsafe_allow_html=True)
-        st.progress(progress_level)
+    st.markdown("</div>", unsafe_allow_html=True)
 
+
+# ---------------------------------------------------------
+# MIDDLE: SYSTEM MESSAGES
+# ---------------------------------------------------------
+with col_mid:
+    st.markdown("### 💠 SYSTEM LOG")
+
+    if len(system_messages) == 0:
         st.markdown(
-            f'<div class="hunter-sub">XP Total : {xp_total} · XP actuel : {xp_in_level}/{XP_PER_LEVEL}</div>',
+            '<div class="system-message">Aucun message du SYSTEM pour le moment.</div>',
             unsafe_allow_html=True
         )
-
-        if today_score > 0:
+    else:
+        for mtype, msg in system_messages:
             st.markdown(
-                f'<div class="hunter-sub" style="margin-top:10px;">Discipline Score (aujourd\'hui) : <b>{today_score}</b>/100</div>',
+                f"""
+                <div class="system-message">
+                    <b>[{mtype}]</b><br><br>
+                    {msg}
+                </div>
+                """,
                 unsafe_allow_html=True
             )
-        else:
+
+    # Manual Query to SYSTEM
+    st.markdown("### 🔹 Interaction")
+
+    manual_query = st.text_input("Pose une question au SYSTEM :")
+    if st.button("Demander"):
+        if manual_query.strip():
+            answer = ask_system(manual_query)
             st.markdown(
-                '<div class="hunter-sub" style="margin-top:10px;">Aucun check-in aujourd’hui.</div>',
+                f"""
+                <div class="system-message">
+                    <b>[INTERACTION]</b><br><br>
+                    {answer}
+                </div>
+                """,
                 unsafe_allow_html=True
             )
 
-        st.markdown("</div>", unsafe_allow_html=True)
 
-    # ---------------------------------------------------------
-    # MIDDLE: SYSTEM MESSAGES
-    # ---------------------------------------------------------
-    with col_mid:
-        st.markdown("### 💠 SYSTEM LOG")
+# ---------------------------------------------------------
+# RIGHT: CALIBRATION + MONTHLY QUEST BUTTON
+# ---------------------------------------------------------
+with col_right:
+    st.markdown("### 🛠 Calibration")
 
-        if len(system_messages) == 0:
-            st.markdown(
-                '<div class="system-message">Aucun message du SYSTEM pour le moment.</div>',
-                unsafe_allow_html=True
-            )
-        else:
-            for mtype, msg in system_messages:
-                st.markdown(
-                    f"""
-                    <div class="system-message">
-                        <b>[{mtype}]</b><br><br>
-                        {msg}
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
-
-        # Manual Query to SYSTEM
-        st.markdown("### 🔹 Interaction")
-
-        manual_query = st.text_input("Pose une question au SYSTEM :")
-        if st.button("Demander"):
-            if manual_query.strip():
-                answer = ask_system(manual_query)
-                st.markdown(
-                    f"""
-                    <div class="system-message">
-                        <b>[INTERACTION]</b><br><br>
-                        {answer}
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
-
-    # ---------------------------------------------------------
-    # RIGHT: CALIBRATION
-    # ---------------------------------------------------------
-    with col_right:
-        st.markdown("### 🛠 Calibration")
-
-        if st.button("Calibration immédiate (manual override)"):
-            msg = system_generate_monthly_calibration(daily_scores_df, level, xp_total)
-            st.markdown(
-                f'<div class="system-message"><b>[CALIBRATION]</b><br><br>{msg}</div>',
-                unsafe_allow_html=True
-            )
+    if st.button("Calibration immédiate (manual override)"):
+        msg = system_generate_monthly_calibration(daily_scores_df, level, xp_total)
+        st.markdown(
+            f'<div class="system-message"><b>[CALIBRATION]</b><br><br>{msg}</div>',
+            unsafe_allow_html=True
+        )
 
 # ---------------------------------------------------------------------
 # DAILY CHECK-IN PANEL
 # ---------------------------------------------------------------------
 
-st.markdown("---")
 st.markdown("## 📆 Daily Check-In")
 
 if habits_df.empty:
@@ -724,121 +704,118 @@ else:
     daily_habits = habits_df[habits_df["frequency"] == "daily"]
     weekly_habits = habits_df[habits_df["frequency"] == "weekly"]
 
-    # On met Daily + Weekly sur une grande zone en 2 colonnes
-    col_daily, col_weekly = st.columns([2, 1.4])
-
     # ---------- DAILY ----------
-    with col_daily:
-        st.markdown("### 🔁 Habitudes quotidiennes")
+    st.markdown("### 🔁 Habitudes quotidiennes")
 
-        if daily_habits.empty:
-            st.info("Aucune habitude quotidienne définie.")
-        else:
-            st.markdown(
-                "Complète tes habitudes ci-dessous pour gagner du XP et renforcer ton aura."
-            )
+    if daily_habits.empty:
+        st.info("Aucune habitude quotidienne définie.")
+    else:
+        st.markdown(
+            "Complète tes habitudes ci-dessous pour gagner du XP et renforcer ton aura."
+        )
 
-            updated_today = False
-            new_xp_gain = 0
+        updated_today = False
+        new_xp_gain = 0
 
-            for idx, row in daily_habits.iterrows():
-                habit_id = int(row["id"])
-                habit_name = row["habit"]
-                xp_value = int(row["xp_value"])
+        for idx, row in daily_habits.iterrows():
+            habit_id = int(row["id"])
+            habit_name = row["habit"]
+            xp_value = int(row["xp_value"])
 
-                # Vérifie si déjà rempli aujourd’hui (tous types confondus)
-                exists = today_checkins[
-                    (today_checkins["habit_id"] == habit_id)
-                ]
+            # Vérifie si déjà rempli aujourd’hui (tous types confondus)
+            exists = today_checkins[
+                (today_checkins["habit_id"] == habit_id)
+            ]
 
-                c1, c2 = st.columns([3, 1])
+            col1, col2 = st.columns([2, 1])
 
-                with c1:
-                    st.write(f"**{habit_name}**  (+{xp_value} XP)")
+            with col1:
+                st.write(f"**{habit_name}**  (+{xp_value} XP)")
 
-                with c2:
-                    if exists.empty:
-                        if st.button(f"Valider {habit_name}", key=f"habit_daily_{habit_id}"):
-                            save_checkin(habit_id, 1)
-                            new_xp_gain += xp_value
-                            updated_today = True
-                    else:
-                        st.success("✔ OK")
+            with col2:
+                if exists.empty:
+                    if st.button(f"Valider {habit_name}", key=f"habit_daily_{habit_id}"):
+                        save_checkin(habit_id, 1)
+                        new_xp_gain += xp_value
+                        updated_today = True
+                else:
+                    st.success("✔ OK")
 
-            # Si le joueur a validé des habitudes DAILY aujourd'hui
-            if updated_today:
-                xp_total += new_xp_gain
-                save_meta()
+        # Si le joueur a validé des habitudes DAILY aujourd'hui
+        if updated_today:
+            xp_total += new_xp_gain
+            save_meta()
 
-                st.success(f"🔥 {new_xp_gain} XP gagné aujourd'hui !")
+            st.success(f"🔥 {new_xp_gain} XP gagné aujourd'hui !")
 
-                # LEVEL UP ?
-                new_level = get_level(xp_total)
-                if new_level > level:
-                    level_up_msg = system_generate_level_up_message(new_level)
-                    st.markdown(
-                        f"""
-                        <div class="system-message">
-                            <b>[LEVEL UP]</b><br><br>
-                            {level_up_msg}
-                        </div>
-                        """,
-                        unsafe_allow_html=True
-                    )
+            # LEVEL UP ?
+            new_level = get_level(xp_total)
+            if new_level > level:
+                level_up_msg = system_generate_level_up_message(new_level)
+                st.markdown(
+                    f"""
+                    <div class="system-message">
+                        <b>[LEVEL UP]</b><br><br>
+                        {level_up_msg}
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
 
-                st.experimental_rerun()
+            st.experimental_rerun()
 
     # ---------- WEEKLY ----------
-    with col_weekly:
-        st.markdown("### 📅 Habitudes hebdomadaires (1x / semaine)")
+    st.markdown("---")
+    st.markdown("### 📅 Habitudes hebdomadaires (1x par semaine)")
 
-        if weekly_habits.empty:
-            st.info("Aucune habitude hebdomadaire définie.")
-        else:
-            week_start, week_end = get_week_bounds(today)
-            week_start_str = week_start.strftime("%Y-%m-%d")
-            week_end_str = week_end.strftime("%Y-%m-%d")
+    if weekly_habits.empty:
+        st.info("Aucune habitude hebdomadaire définie.")
+    else:
+        week_start, week_end = get_week_bounds(today)
+        week_start_str = week_start.strftime("%Y-%m-%d")
+        week_end_str = week_end.strftime("%Y-%m-%d")
 
-            for idx, row in weekly_habits.iterrows():
-                habit_id = int(row["id"])
-                habit_name = row["habit"]
+        for idx, row in weekly_habits.iterrows():
+            habit_id = int(row["id"])
+            habit_name = row["habit"]
 
-                # Check : déjà validée cette semaine ?
-                mask = (
-                    (checkins_df["habit_id"] == habit_id) &
-                    (checkins_df["date"] >= week_start_str) &
-                    (checkins_df["date"] <= week_end_str)
-                )
-                done_this_week = not checkins_df[mask].empty
+            # Check : déjà validée cette semaine ?
+            mask = (
+                (checkins_df["habit_id"] == habit_id) &
+                (checkins_df["date"] >= week_start_str) &
+                (checkins_df["date"] <= week_end_str)
+            )
+            done_this_week = not checkins_df[mask].empty
 
-                c1, c2 = st.columns([3, 1])
+            col1, col2 = st.columns([2, 1])
 
-                with c1:
-                    st.write(f"**{habit_name}**  (weekly)")
+            with col1:
+                st.write(f"**{habit_name}**  (weekly)")
 
-                with c2:
-                    if done_this_week:
-                        st.success("✔ Validée cette semaine")
-                    else:
-                        if st.button(f"Valider {habit_name}", key=f"habit_weekly_{habit_id}"):
-                            # Nombre de complétions sur 4 semaines
-                            four_weeks_ago = today - timedelta(weeks=4)
-                            four_weeks_ago_str = four_weeks_ago.strftime("%Y-%m-%d")
-                            mask_hist = (
-                                (checkins_df["habit_id"] == habit_id) &
-                                (checkins_df["date"] >= four_weeks_ago_str)
-                            )
-                            completions_last_4_weeks = checkins_df[mask_hist].shape[0]
+            with col2:
+                if done_this_week:
+                    st.success("✔ Validée cette semaine")
+                else:
+                    if st.button(f"Valider {habit_name}", key=f"habit_weekly_{habit_id}"):
+                        # Nombre de complétions sur 4 semaines
+                        four_weeks_ago = today - timedelta(weeks=4)
+                        four_weeks_ago_str = four_weeks_ago.strftime("%Y-%m-%d")
+                        mask_hist = (
+                            (checkins_df["habit_id"] == habit_id) &
+                            (checkins_df["date"] >= four_weeks_ago_str)
+                        )
+                        completions_last_4_weeks = checkins_df[mask_hist].shape[0]
 
-                            # XP dynamique via SYSTEM
-                            gained_xp = system_assign_weekly_xp(row, completions_last_4_weeks)
-                            xp_total += gained_xp
+                        # XP dynamique via SYSTEM
+                        gained_xp = system_assign_weekly_xp(row, completions_last_4_weeks)
+                        xp_total += gained_xp
 
-                            save_checkin(habit_id, 1)
-                            save_meta()
+                        save_checkin(habit_id, 1)
+                        save_meta()
 
-                            st.success(f"💠 Weekly complétée : +{gained_xp} XP")
-                            st.experimental_rerun()
+                        st.success(f"💠 Weekly complétée : +{gained_xp} XP")
+                        st.experimental_rerun()
+
 
 # ---------------------------------------------------------------------
 # MANAGE HABITS (OPTIONAL AREA)
@@ -850,15 +827,23 @@ st.markdown("### ⚙️ Gérer les habitudes")
 with st.expander("Ajouter une nouvelle habitude"):
     new_habit_name = st.text_input("Nom de l'habitude :")
     new_habit_xp = st.number_input("XP associée :", min_value=5, max_value=100, value=10, step=5)
+    new_habit_freq = st.selectbox("Fréquence", ["daily", "weekly"], index=0)
 
     if st.button("Ajouter l'habitude"):
         if new_habit_name.strip():
             new_id = habits_df["id"].max() + 1 if not habits_df.empty else 1
-            new_row = {"id": new_id, "habit": new_habit_name, "xp_value": new_habit_xp}
+            new_row = {
+                "id": new_id,
+                "habit": new_habit_name,
+                "xp_value": new_habit_xp,
+                "frequency": new_habit_freq,
+            }
             habits_df = pd.concat([habits_df, pd.DataFrame([new_row])], ignore_index=True)
             set_with_dataframe(ws_habits, habits_df)
             st.success("Habitude ajoutée.")
             st.experimental_rerun()
+
+
 
 with st.expander("Modifier / supprimer des habitudes"):
     st.write(habits_df[["id", "habit", "xp_value"]])
@@ -891,7 +876,6 @@ with st.expander("Modifier / supprimer des habitudes"):
 # GRAPHES — Evolution de la Discipline
 # ---------------------------------------------------------------------
 
-st.markdown("---")
 st.markdown("## 📈 Evolution de la Discipline (14 jours)")
 
 if daily_scores_df.empty:
@@ -902,6 +886,7 @@ else:
         last14.set_index("date")["discipline_score"],
         height=220
     )
+
 
 # ---------------------------------------------------------------------
 # HUNTER HISTORY — Timeline
@@ -936,6 +921,7 @@ else:
             unsafe_allow_html=True
         )
 
+
 # ---------------------------------------------------------------------
 # QUESTS SYSTEM (GPT-Generated Quests)
 # ---------------------------------------------------------------------
@@ -963,6 +949,7 @@ with col_q1:
         q = ask_system(prompt)
         st.markdown(f'<div class="system-message">{q}</div>', unsafe_allow_html=True)
 
+
 # MONTHLY QUEST
 with col_q2:
     st.markdown("### 💎 Monthly Quest")
@@ -981,8 +968,11 @@ with col_q2:
         q = ask_system(prompt)
         st.markdown(f'<div class="system-message">{q}</div>', unsafe_allow_html=True)
 
+
+
 # ---------------------------------------------------------------------
 # OPTIONAL: BACKGROUND IMAGE SUPPORT
+# (Use uploaded screenshot as background if wanted)
 # ---------------------------------------------------------------------
 
 background_image_path = "/mnt/data/Capture d’écran 2025-11-18 à 20.30.17.png"
@@ -1009,10 +999,12 @@ def inject_background_image(path):
     except:
         pass
 
+# Toggle
 st.markdown("## 🎨 Apparence (Optionnel)")
 
 if st.toggle("Activer fond personnalisé"):
     inject_background_image(background_image_path)
+
 
 # ---------------------------------------------------------------------
 # FOOTER
