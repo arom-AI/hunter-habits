@@ -269,37 +269,37 @@ habits_df = habits_df.dropna(subset=["name"])
 # On renomme 'name' en 'habit' pour le reste du code
 habits_df = habits_df.rename(columns={"name": "habit"})
 
+# ---------------------------------------------------------------------
 # Normalisation de la fréquence : daily / weekly (par défaut : daily)
-# Harmonisation du nom de colonne
-if "frequency" in habits_df.columns:
-    col = "frequency"
-elif "Frequency" in habits_df.columns:
-    col = "Frequency"
-else:
-    col = None
+# ---------------------------------------------------------------------
 
-if col:
+# On essaie de trouver une colonne qui ressemble à "frequency"
+freq_col = None
+for c in habits_df.columns:
+    if str(c).strip().lower() in ["frequency", "frequence"]:
+        freq_col = c
+        break
+
+if freq_col:
+    # On normalise dans une vraie colonne 'frequency'
     habits_df["frequency"] = (
-        habits_df[col]
+        habits_df[freq_col]
         .astype(str)
         .str.strip()
         .str.lower()
         .replace({
             "daily": "daily",
             "quotidienne": "daily",
+            "quotidien": "daily",
             "weekly": "weekly",
             "hebdo": "weekly",
             "hebdomadaire": "weekly",
         })
     )
 else:
-    habits_df["frequency"] = (
-        habits_df["frequency"]
-        .astype(str)
-        .str.strip()
-        .str.lower()
-        .replace({"quotidienne": "daily", "hebdo": "weekly", "hebdomadaire": "weekly"})
-    )
+    # Si aucune colonne trouvée, on considère tout en "daily"
+    habits_df["frequency"] = "daily"
+
 
 # Si la colonne xp_value n'existe pas, on la dérive de is_core :
 #  - 20 XP si is_core == 1
