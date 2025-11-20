@@ -293,9 +293,6 @@ if col:
         })
     )
 else:
-    habits_df["frequency"] = "daily"
-
-else:
     habits_df["frequency"] = (
         habits_df["frequency"]
         .astype(str)
